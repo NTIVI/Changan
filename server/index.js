@@ -7,7 +7,8 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 // Initialize Database Pool
 const pool = new Pool({
@@ -69,8 +70,27 @@ const initDb = async () => {
         source VARCHAR(50),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
+
+      -- Run Alter table scripts to add file data columns if they don't exist
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS passport_file_data TEXT;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS passport_file_name TEXT;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS vin_file_data TEXT;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS vin_file_name TEXT;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS pdf_file_data TEXT;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS pdf_file_name TEXT;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS num_file_data TEXT;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS num_file_name TEXT;
+
+      ALTER TABLE confirmed ADD COLUMN IF NOT EXISTS passport_file_data TEXT;
+      ALTER TABLE confirmed ADD COLUMN IF NOT EXISTS passport_file_name TEXT;
+      ALTER TABLE confirmed ADD COLUMN IF NOT EXISTS vin_file_data TEXT;
+      ALTER TABLE confirmed ADD COLUMN IF NOT EXISTS vin_file_name TEXT;
+      ALTER TABLE confirmed ADD COLUMN IF NOT EXISTS pdf_file_data TEXT;
+      ALTER TABLE confirmed ADD COLUMN IF NOT EXISTS pdf_file_name TEXT;
+      ALTER TABLE confirmed ADD COLUMN IF NOT EXISTS num_file_data TEXT;
+      ALTER TABLE confirmed ADD COLUMN IF NOT EXISTS num_file_name TEXT;
     `);
-    console.log('Database tables verified/created successfully.');
+    console.log('Database tables verified/created and schema updated successfully.');
   } catch (err) {
     console.error('Error initializing database tables:', err);
   }
@@ -104,7 +124,14 @@ const mapDocRow = (row) => ({
   hasPassportPhoto: row.has_passport_photo,
   hasVinPhoto: row.has_vin_photo,
   hasPdfFile: row.has_pdf_file,
-  hasNumPhoto: row.has_num_photo
+  hasNumPhoto: row.has_num_photo,
+  passportFileData: row.passport_file_data,
+  passportFileName: row.passport_file_name,
+  vinFileData: row.vin_file_data,
+  vinFileName: row.vin_file_name,
+  pdfFileData: row.pdf_file_data,
+  numFileData: row.num_file_data,
+  numFileName: row.num_file_name
 });
 
 const mapConfirmedRow = (row) => ({
@@ -122,7 +149,14 @@ const mapConfirmedRow = (row) => ({
   pdfFileName: row.pdf_file_name,
   servicedBy: row.serviced_by,
   confirmedAt: row.confirmed_at,
-  source: row.source
+  source: row.source,
+  passportFileData: row.passport_file_data,
+  passportFileName: row.passport_file_name,
+  vinFileData: row.vin_file_data,
+  vinFileName: row.vin_file_name,
+  pdfFileData: row.pdf_file_data,
+  numFileData: row.num_file_data,
+  numFileName: row.num_file_name
 });
 
 // API Routes
@@ -198,20 +232,23 @@ app.get('/api/documents', async (req, res) => {
 app.post('/api/documents', async (req, res) => {
   const {
     id, firstName, lastName, passportNumber, vinCode, virtualPhone, country, pdfFileName, servicedBy,
-    hasPassportPhoto, hasVinPhoto, hasPdfFile, hasNumPhoto
+    hasPassportPhoto, hasVinPhoto, hasPdfFile, hasNumPhoto,
+    passportFileData, passportFileName, vinFileData, vinFileName, pdfFileData, numFileData, numFileName
   } = req.body;
   try {
     const query = `
       INSERT INTO documents (
         id, first_name, last_name, passport_number, vin_code, virtual_phone, country, pdf_file_name, serviced_by,
-        has_passport_photo, has_vin_photo, has_pdf_file, has_num_photo
+        has_passport_photo, has_vin_photo, has_pdf_file, has_num_photo,
+        passport_file_data, passport_file_name, vin_file_data, vin_file_name, pdf_file_data, num_file_data, num_file_name
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
       RETURNING *
     `;
     const { rows } = await pool.query(query, [
       id, firstName, lastName, passportNumber, vinCode, virtualPhone, country, pdfFileName, servicedBy,
-      hasPassportPhoto, hasVinPhoto, hasPdfFile, hasNumPhoto
+      hasPassportPhoto, hasVinPhoto, hasPdfFile, hasNumPhoto,
+      passportFileData, passportFileName, vinFileData, vinFileName, pdfFileData, numFileData, numFileName
     ]);
     res.status(201).json(mapDocRow(rows[0]));
   } catch (err) {
@@ -224,19 +261,23 @@ app.put('/api/documents/:id', async (req, res) => {
   const { id } = req.params;
   const {
     firstName, lastName, passportNumber, vinCode, virtualPhone, country, pdfFileName, servicedBy,
-    hasPassportPhoto, hasVinPhoto, hasPdfFile, hasNumPhoto
+    hasPassportPhoto, hasVinPhoto, hasPdfFile, hasNumPhoto,
+    passportFileData, passportFileName, vinFileData, vinFileName, pdfFileData, numFileData, numFileName
   } = req.body;
   try {
     const query = `
       UPDATE documents
       SET first_name = $1, last_name = $2, passport_number = $3, vin_code = $4, virtual_phone = $5, country = $6, pdf_file_name = $7, serviced_by = $8,
-          has_passport_photo = $9, has_vin_photo = $10, has_pdf_file = $11, has_num_photo = $12
-      WHERE id = $13
+          has_passport_photo = $9, has_vin_photo = $10, has_pdf_file = $11, has_num_photo = $12,
+          passport_file_data = $13, passport_file_name = $14, vin_file_data = $15, vin_file_name = $16, pdf_file_data = $17,
+          num_file_data = $18, num_file_name = $19
+      WHERE id = $20
       RETURNING *
     `;
     const { rows } = await pool.query(query, [
       firstName, lastName, passportNumber, vinCode, virtualPhone, country, pdfFileName, servicedBy,
-      hasPassportPhoto, hasVinPhoto, hasPdfFile, hasNumPhoto, id
+      hasPassportPhoto, hasVinPhoto, hasPdfFile, hasNumPhoto,
+      passportFileData, passportFileName, vinFileData, vinFileName, pdfFileData, numFileData, numFileName, id
     ]);
     if (rows.length === 0) return res.status(404).json({ error: 'Record not found' });
     res.json(mapDocRow(rows[0]));
@@ -271,20 +312,23 @@ app.get('/api/confirmed', async (req, res) => {
 app.post('/api/confirmed', async (req, res) => {
   const {
     id, firstName, lastName, phone, date, time, reason, passportNumber, vinCode, virtualPhone, country, pdfFileName,
-    servicedBy, confirmedAt, source
+    servicedBy, confirmedAt, source,
+    passportFileData, passportFileName, vinFileData, vinFileName, pdfFileData, numFileData, numFileName
   } = req.body;
   try {
     const query = `
       INSERT INTO confirmed (
         id, first_name, last_name, phone, date, time, reason, passport_number, vin_code, virtual_phone, country, pdf_file_name,
-        serviced_by, confirmed_at, source
+        serviced_by, confirmed_at, source,
+        passport_file_data, passport_file_name, vin_file_data, vin_file_name, pdf_file_data, num_file_data, num_file_name
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       RETURNING *
     `;
     const { rows } = await pool.query(query, [
       id, firstName, lastName, phone, date, time, reason, passportNumber, vinCode, virtualPhone, country, pdfFileName,
-      servicedBy, confirmedAt, source
+      servicedBy, confirmedAt, source,
+      passportFileData, passportFileName, vinFileData, vinFileName, pdfFileData, numFileData, numFileName
     ]);
     res.status(201).json(mapConfirmedRow(rows[0]));
   } catch (err) {

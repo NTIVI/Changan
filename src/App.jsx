@@ -101,6 +101,12 @@ function App() {
     pdf: null,
     numberScreenshot: null
   });
+  const [uploadedFilesData, setUploadedFilesData] = useState({
+    passport: null,
+    vin: null,
+    pdf: null,
+    numberScreenshot: null
+  });
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStatusText, setScanStatusText] = useState('');
@@ -323,6 +329,34 @@ function App() {
     triggerToast(`Файл "${fileName}" загружен.`);
   };
 
+  const handleRealFileUpload = (slotKey, file) => {
+    if (!file) return;
+    
+    // Size check: limit to 10MB
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Файл слишком большой. Максимальный размер 10 МБ.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64Data = e.target.result;
+      
+      setUploadedFiles((prev) => ({
+        ...prev,
+        [slotKey]: file.name
+      }));
+
+      setUploadedFilesData((prev) => ({
+        ...prev,
+        [slotKey]: base64Data
+      }));
+
+      triggerToast(`Файл "${file.name}" успешно загружен.`);
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Menu 2: OCR Scanning Simulator
   const handleRunOcr = () => {
     if (!uploadedFiles.passport && !uploadedFiles.vin && !uploadedFiles.pdf && !uploadedFiles.numberScreenshot) {
@@ -401,7 +435,14 @@ function App() {
       hasPassportPhoto: !!uploadedFiles.passport,
       hasVinPhoto: !!uploadedFiles.vin,
       hasPdfFile: !!uploadedFiles.pdf,
-      hasNumPhoto: !!uploadedFiles.numberScreenshot
+      hasNumPhoto: !!uploadedFiles.numberScreenshot,
+      passportFileData: uploadedFilesData.passport,
+      passportFileName: uploadedFiles.passport,
+      vinFileData: uploadedFilesData.vin,
+      vinFileName: uploadedFiles.vin,
+      pdfFileData: uploadedFilesData.pdf,
+      numFileData: uploadedFilesData.numberScreenshot,
+      numFileName: uploadedFiles.numberScreenshot
     };
 
     // Check for duplicate in Confirmed
@@ -424,6 +465,7 @@ function App() {
         const newRecord = await res.json();
         setDocsList((prev) => [newRecord, ...prev]);
         setUploadedFiles({ passport: null, vin: null, pdf: null, numberScreenshot: null });
+        setUploadedFilesData({ passport: null, vin: null, pdf: null, numberScreenshot: null });
         setOcrData({
           firstName: '',
           lastName: '',
@@ -501,7 +543,15 @@ function App() {
       pdfFileName: record.pdfFileName,
       servicedBy: username || record.servicedBy || 'Администратор',
       confirmedAt: new Date().toLocaleString(),
-      source: 'documents'
+      source: 'documents',
+      // Pass actual uploaded files
+      passportFileData: record.passportFileData,
+      passportFileName: record.passportFileName,
+      vinFileData: record.vinFileData,
+      vinFileName: record.vinFileName,
+      pdfFileData: record.pdfFileData,
+      numFileData: record.numFileData,
+      numFileName: record.numFileName
     };
 
     try {
@@ -526,7 +576,7 @@ function App() {
     }
   };
 
-  // Menu 2: ZIP Download generator (creates zip with real Excel Sheet and placeholder PDF)
+  // Menu 2: ZIP Download generator (creates zip with real Excel Sheet and uploaded files)
   const handleDownloadZip = (record) => {
     const { firstName, lastName, passportNumber, vinCode, virtualPhone, country, servicedBy } = record;
     
@@ -557,9 +607,37 @@ function App() {
     const xlsxFileName = `${firstName}_${lastName}_${vinCode}.xlsx`;
     zip.file(xlsxFileName, excelBuffer);
 
-    // 2. Add PDF file named risk_VIN.pdf
-    const pdfFileName = `risk_${vinCode}.pdf`;
-    const pdfDummyContent = `%PDF-1.4
+    // 2. Add Passport Photo file if it exists
+    if (record.passportFileData) {
+      try {
+        const base64Content = record.passportFileData.split(',')[1];
+        zip.file(record.passportFileName || 'passport_photo.jpg', base64Content, { base64: true });
+      } catch (e) {
+        console.error('Error adding passport photo to ZIP:', e);
+      }
+    }
+
+    // 3. Add VIN Photo file if it exists
+    if (record.vinFileData) {
+      try {
+        const base64Content = record.vinFileData.split(',')[1];
+        zip.file(record.vinFileName || 'vin_plate.jpg', base64Content, { base64: true });
+      } catch (e) {
+        console.error('Error adding VIN photo to ZIP:', e);
+      }
+    }
+
+    // 4. Add PDF file (uploaded or dummy)
+    if (record.pdfFileData) {
+      try {
+        const base64Content = record.pdfFileData.split(',')[1];
+        zip.file(record.pdfFileName || `risk_${vinCode}.pdf`, base64Content, { base64: true });
+      } catch (e) {
+        console.error('Error adding PDF to ZIP:', e);
+      }
+    } else {
+      const pdfFileName = `risk_${vinCode}.pdf`;
+      const pdfDummyContent = `%PDF-1.4
 1 0 obj
 << /Title (Changan Risk Assessment - ${firstName} ${lastName})
    /Author (${servicedBy})
@@ -573,7 +651,18 @@ trailer
 startxref
 110
 %%EOF`;
-    zip.file(pdfFileName, pdfDummyContent);
+      zip.file(pdfFileName, pdfDummyContent);
+    }
+
+    // 5. Add Virtual Number Screenshot file if it exists
+    if (record.numFileData) {
+      try {
+        const base64Content = record.numFileData.split(',')[1];
+        zip.file(record.numFileName || 'virtual_phone_screenshot.jpg', base64Content, { base64: true });
+      } catch (e) {
+        console.error('Error adding virtual number photo to ZIP:', e);
+      }
+    }
 
     // Generate blob and trigger download
     zip.generateAsync({ type: 'blob' }).then((content) => {
@@ -1056,9 +1145,39 @@ startxref
                 </h3>
 
                 <div className="ocr-slots-grid">
+                  {/* Hidden Native File Inputs */}
+                  <input
+                    id="passport-file-input"
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => handleRealFileUpload('passport', e.target.files[0])}
+                  />
+                  <input
+                    id="vin-file-input"
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => handleRealFileUpload('vin', e.target.files[0])}
+                  />
+                  <input
+                    id="pdf-file-input"
+                    type="file"
+                    accept="application/pdf"
+                    style={{ display: 'none' }}
+                    onChange={(e) => handleRealFileUpload('pdf', e.target.files[0])}
+                  />
+                  <input
+                    id="num-file-input"
+                    type="file"
+                    accept="image/*"
+                    style={{ display: 'none' }}
+                    onChange={(e) => handleRealFileUpload('numberScreenshot', e.target.files[0])}
+                  />
+
                   <div
                     className={`ocr-slot ${uploadedFiles.passport ? 'active' : ''}`}
-                    onClick={() => simulateUpload('passport', 'passport_photo_main.jpg')}
+                    onClick={() => document.getElementById('passport-file-input').click()}
                   >
                     <User className="ocr-slot-icon" />
                     <span className="ocr-slot-title">Фото паспорта</span>
@@ -1070,7 +1189,7 @@ startxref
 
                   <div
                     className={`ocr-slot ${uploadedFiles.vin ? 'active' : ''}`}
-                    onClick={() => simulateUpload('vin', 'changan_vin_plate.png')}
+                    onClick={() => document.getElementById('vin-file-input').click()}
                   >
                     <ShieldAlert className="ocr-slot-icon" />
                     <span className="ocr-slot-title">Фото VIN-кода</span>
@@ -1082,7 +1201,7 @@ startxref
 
                   <div
                     className={`ocr-slot ${uploadedFiles.pdf ? 'active' : ''}`}
-                    onClick={() => simulateUpload('pdf', 'contract_v1.pdf')}
+                    onClick={() => document.getElementById('pdf-file-input').click()}
                   >
                     <FileText className="ocr-slot-icon" />
                     <span className="ocr-slot-title">PDF Контракт</span>
@@ -1094,7 +1213,7 @@ startxref
 
                   <div
                     className={`ocr-slot ${uploadedFiles.numberScreenshot ? 'active' : ''}`}
-                    onClick={() => simulateUpload('numberScreenshot', 'virtual_number_screenshot.jpg')}
+                    onClick={() => document.getElementById('num-file-input').click()}
                   >
                     <Upload className="ocr-slot-icon" />
                     <span className="ocr-slot-title">Скриншот вирт. номера</span>
