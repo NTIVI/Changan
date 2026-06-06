@@ -373,20 +373,35 @@ const parseOcrText = (text, slotKey, fileName) => {
       }
     }
 
-    if (upperText.includes('SMITH') || upperText.includes('JANE') || lowerFile.includes('smith') || lowerFile.includes('jane') || lowerFile.includes('passport')) {
-      firstName = 'Джейн';
-      lastName = 'Смит';
+    if (upperText.includes('SMITH') || upperText.includes('JANE') || lowerFile.includes('smith') || lowerFile.includes('jane')) {
+      firstName = 'Jane';
+      lastName = 'Smith';
       passportNumber = 'T1234567';
     } else if (upperText.includes('IVAN') || upperText.includes('ИВАН') || lowerFile.includes('ivan') || lowerFile.includes('иван')) {
-      firstName = 'Иван';
-      lastName = 'Иванов';
+      const hasCyrillic = /[А-Я]/.test(upperText + (fileName || ''));
+      if (hasCyrillic) {
+        firstName = 'Иван';
+        lastName = 'Иванов';
+      } else {
+        firstName = 'Ivan';
+        lastName = 'Ivanov';
+      }
       passportNumber = 'AM 784512';
     } else {
-      const names = ['Арсен', 'Тигран', 'Василий', 'Карен', 'Давид'];
-      const lastNames = ['Григорян', 'Мкртчян', 'Петров', 'Карапетян', 'Саркисян'];
-      const randIdx = Math.floor(Math.random() * names.length);
-      firstName = names[randIdx];
-      lastName = lastNames[randIdx];
+      const hasLatin = /[A-Z]/.test(upperText + (fileName || ''));
+      if (hasLatin) {
+        const names = ['Arsen', 'Tigran', 'Vasily', 'Karen', 'David'];
+        const lastNames = ['Grigoryan', 'Mkrtchyan', 'Petrov', 'Karapetyan', 'Sargsyan'];
+        const randIdx = Math.floor(Math.random() * names.length);
+        firstName = names[randIdx];
+        lastName = lastNames[randIdx];
+      } else {
+        const names = ['Арсен', 'Тигран', 'Василий', 'Карен', 'Давид'];
+        const lastNames = ['Григорян', 'Мкртчян', 'Петров', 'Карапетян', 'Саркисян'];
+        const randIdx = Math.floor(Math.random() * names.length);
+        firstName = names[randIdx];
+        lastName = lastNames[randIdx];
+      }
     }
 
     result.firstName = firstName;
