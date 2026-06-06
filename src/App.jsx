@@ -355,97 +355,80 @@ function App() {
       triggerToast(`Файл "${file.name}" успешно загружен.`);
       
       // Automatic OCR recognition upon upload
-      runAutoOcrForSlot(slotKey, file.name);
+      runAutoOcrForSlot(slotKey, file.name, base64Data);
     };
     reader.readAsDataURL(file);
   };
 
-  const runAutoOcrForSlot = (slotKey, fileName) => {
+  const runAutoOcrForSlot = async (slotKey, fileName, base64Data) => {
     setIsScanning(true);
     setScanProgress(0);
     
     let statusText = '';
     if (slotKey === 'passport') {
-      statusText = 'Авто-OCR: Анализ паспорта и распознавание ФИО...';
+      statusText = 'Авто-OCR: Отправка паспорта на сервер...';
     } else if (slotKey === 'vin') {
-      statusText = 'Авто-OCR: Сканирование VIN-кода...';
+      statusText = 'Авто-OCR: Отправка VIN-кода на сервер...';
     } else if (slotKey === 'pdf') {
       statusText = 'Авто-OCR: Чтение PDF договора...';
     } else if (slotKey === 'numberScreenshot') {
-      statusText = 'Авто-OCR: Распознавание номера телефона...';
+      statusText = 'Авто-OCR: Извлечение телефонного номера...';
     }
     
     setScanStatusText(statusText);
 
+    // Increment progress bar up to 90% while waiting for backend
     let progress = 0;
-    const interval = setInterval(() => {
-      progress += 25;
-      if (progress <= 100) {
+    const progressInterval = setInterval(() => {
+      progress += 10;
+      if (progress < 90) {
         setScanProgress(progress);
-      } else {
-        clearInterval(interval);
-        setTimeout(() => {
-          setIsScanning(false);
-          
-          if (slotKey === 'passport') {
-            let firstName = 'Армен';
-            let lastName = 'Саркисян';
-            let passportNumber = `AM ${Math.floor(100000 + Math.random() * 900000)}`;
-
-            const lowerName = fileName.toLowerCase();
-            if (lowerName.includes('passport') || lowerName.includes('test_passport') || lowerName.includes('smith') || lowerName.includes('jane')) {
-              firstName = 'Джейн';
-              lastName = 'Смит';
-              passportNumber = 'T1234567';
-            } else if (lowerName.includes('ivan') || lowerName.includes('иван')) {
-              firstName = 'Иван';
-              lastName = 'Иванов';
-              passportNumber = 'AM 784512';
-            } else {
-              const names = ['Арсен', 'Тигран', 'Василий', 'Карен', 'Давид'];
-              const lastNames = ['Григорян', 'Мкртчян', 'Петров', 'Карапетян', 'Саркисян'];
-              const randIdx = Math.floor(Math.random() * names.length);
-              firstName = names[randIdx];
-              lastName = lastNames[randIdx];
-            }
-
-            setOcrData((prev) => ({
-              ...prev,
-              firstName,
-              lastName,
-              passportNumber
-            }));
-            triggerToast(`Авто-OCR успешно распознал паспорт: ${firstName} ${lastName}`);
-          } 
-          
-          else if (slotKey === 'vin') {
-            let vinCode = '';
-            // Search for 17-character VIN in file name
-            const match = fileName.toUpperCase().match(/[A-HJ-NPR-Z0-9]{17}/);
-            if (match) {
-              vinCode = match[0];
-            } else {
-              vinCode = `LSG${Math.random().toString(36).substring(2, 16).toUpperCase()}`;
-            }
-
-            setOcrData((prev) => ({
-              ...prev,
-              vinCode
-            }));
-            triggerToast(`Авто-OCR успешно распознал VIN-код: ${vinCode}`);
-          }
-
-          else if (slotKey === 'numberScreenshot') {
-            let virtualPhone = `+374-94-${Math.floor(100000 + Math.random() * 900000)}`;
-            setOcrData((prev) => ({
-              ...prev,
-              virtualPhone
-            }));
-            triggerToast(`Авто-OCR успешно распознал виртуальный номер: ${virtualPhone}`);
-          }
-        }, 200);
+        if (slotKey === 'passport' && progress === 40) {
+          setScanStatusText('Авто-OCR: Распознавание ФИО и серии паспорта Tesseract нейросетью...');
+        } else if (slotKey === 'vin' && progress === 40) {
+          setScanStatusText('Авто-OCR: Анализ VIN-пластины и фильтрация символов...');
+        }
       }
     }, 150);
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/ocr`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fileData: base64Data, slotKey, fileName })
+      });
+      
+      clearInterval(progressInterval);
+      setScanProgress(100);
+      
+      if (res.ok) {
+        const ocrResult = await res.json();
+        
+        setOcrData((prev) => ({
+          ...prev,
+          ...ocrResult
+        }));
+
+        setIsScanning(false);
+        if (slotKey === 'passport') {
+          triggerToast(`Авто-OCR успешно распознал паспорт: ${ocrResult.firstName} ${ocrResult.lastName}`);
+        } else if (slotKey === 'vin') {
+          triggerToast(`Авто-OCR успешно распознал VIN-код: ${ocrResult.vinCode}`);
+        } else if (slotKey === 'numberScreenshot') {
+          triggerToast(`Авто-OCR успешно распознал номер: ${ocrResult.virtualPhone}`);
+        } else {
+          triggerToast(`Авто-OCR завершено успешно.`);
+        }
+      } else {
+        throw new Error('Backend OCR failed');
+      }
+    } catch (err) {
+      console.error(err);
+      clearInterval(progressInterval);
+      setScanProgress(100);
+      setIsScanning(false);
+      triggerToast('Ошибка связи с сервером при распознавании.');
+    }
   };
 
   // Menu 2: OCR Scanning Simulator

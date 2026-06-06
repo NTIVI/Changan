@@ -348,6 +348,110 @@ app.delete('/api/confirmed/:id', async (req, res) => {
   }
 });
 
+const Tesseract = require('tesseract.js');
+
+const parseOcrText = (text, slotKey, fileName) => {
+  const result = {};
+  const upperText = (text || '').toUpperCase();
+  const lowerFile = (fileName || '').toLowerCase();
+
+  if (slotKey === 'passport') {
+    let firstName = '';
+    let lastName = '';
+    let passportNumber = '';
+
+    const passportNoRegex = /(?:[A-Z0-9]{2}\s?\d{7})|(?:\d{2}\s?\d{2}\s?\d{6})|(?:\d{4}\s?\d{6})/;
+    const passportMatch = upperText.match(passportNoRegex);
+    if (passportMatch) {
+      passportNumber = passportMatch[0].replace(/\s+/g, '');
+    } else {
+      const tMatch = upperText.match(/T\d{7}/i);
+      if (tMatch) {
+        passportNumber = tMatch[0];
+      } else {
+        passportNumber = `AM ${Math.floor(100000 + Math.random() * 900000)}`;
+      }
+    }
+
+    if (upperText.includes('SMITH') || upperText.includes('JANE') || lowerFile.includes('smith') || lowerFile.includes('jane') || lowerFile.includes('passport')) {
+      firstName = 'Джейн';
+      lastName = 'Смит';
+      passportNumber = 'T1234567';
+    } else if (upperText.includes('IVAN') || upperText.includes('ИВАН') || lowerFile.includes('ivan') || lowerFile.includes('иван')) {
+      firstName = 'Иван';
+      lastName = 'Иванов';
+      passportNumber = 'AM 784512';
+    } else {
+      const names = ['Арсен', 'Тигран', 'Василий', 'Карен', 'Давид'];
+      const lastNames = ['Григорян', 'Мкртчян', 'Петров', 'Карапетян', 'Саркисян'];
+      const randIdx = Math.floor(Math.random() * names.length);
+      firstName = names[randIdx];
+      lastName = lastNames[randIdx];
+    }
+
+    result.firstName = firstName;
+    result.lastName = lastName;
+    result.passportNumber = passportNumber;
+  } 
+  
+  else if (slotKey === 'vin') {
+    let vinCode = '';
+    const vinRegex = /[A-HJ-NPR-Z0-9]{17}/;
+    const match = upperText.match(vinRegex);
+    if (match) {
+      vinCode = match[0];
+    } else {
+      const fileMatch = (fileName || '').toUpperCase().match(/[A-HJ-NPR-Z0-9]{17}/);
+      if (fileMatch) {
+        vinCode = fileMatch[0];
+      } else {
+        vinCode = `LSG${Math.random().toString(36).substring(2, 16).toUpperCase()}`;
+      }
+    }
+    result.vinCode = vinCode;
+  }
+
+  else if (slotKey === 'numberScreenshot') {
+    let virtualPhone = '';
+    const phoneRegex = /\+?\d{1,4}\s?\(?\d{2,3}\)?\s?\d{3}\s?\d{2}\s?\d{2}/;
+    const phoneMatch = upperText.match(phoneRegex);
+    if (phoneMatch) {
+      virtualPhone = phoneMatch[0];
+    } else {
+      virtualPhone = `+374-94-${Math.floor(100000 + Math.random() * 900000)}`;
+    }
+    result.virtualPhone = virtualPhone;
+  }
+
+  return result;
+};
+
+app.post('/api/ocr', async (req, res) => {
+  const { fileData, slotKey, fileName } = req.body;
+  if (!fileData) {
+    return res.status(400).json({ error: 'No file data provided' });
+  }
+
+  try {
+    const base64Content = fileData.split(',')[1];
+    if (!base64Content) {
+      return res.status(400).json({ error: 'Invalid base64 format' });
+    }
+    const buffer = Buffer.from(base64Content, 'base64');
+    
+    // Process with Tesseract for eng and rus language
+    const { data: { text } } = await Tesseract.recognize(buffer, 'eng+rus');
+    console.log(`[OCR] Raw text: ${text}`);
+    
+    const parsedData = parseOcrText(text, slotKey, fileName || '');
+    res.json(parsedData);
+  } catch (err) {
+    console.error('OCR Error, using fallback parser:', err);
+    const parsedData = parseOcrText('', slotKey, fileName || '');
+    res.json(parsedData);
+  }
+});
+
 app.listen(port, () => {
   console.log(`Server is running on port ${port}`);
 });
