@@ -21,7 +21,9 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
-import { visitReasons, initialWaitlist, initialDocs, initialConfirmed } from './mockData';
+import { visitReasons } from './mockData';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 function App() {
   // 1. Auth States
@@ -34,9 +36,52 @@ function App() {
   const [confirmedSubTab, setConfirmedSubTab] = useState('documents'); // 'documents' | 'waitlist'
 
   // 3. Database States
-  const [waitlist, setWaitlist] = useState(initialWaitlist);
-  const [docsList, setDocsList] = useState(initialDocs);
-  const [confirmed, setConfirmed] = useState(initialConfirmed);
+  const [waitlist, setWaitlist] = useState([]);
+  const [docsList, setDocsList] = useState([]);
+  const [confirmed, setConfirmed] = useState([]);
+
+  // Fetch all data from API on mount
+  useEffect(() => {
+    fetchWaitlist();
+    fetchDocs();
+    fetchConfirmed();
+  }, []);
+
+  const fetchWaitlist = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/waitlist`);
+      if (res.ok) {
+        const data = await res.json();
+        setWaitlist(data);
+      }
+    } catch (err) {
+      console.error('Error fetching waitlist:', err);
+    }
+  };
+
+  const fetchDocs = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/documents`);
+      if (res.ok) {
+        const data = await res.json();
+        setDocsList(data);
+      }
+    } catch (err) {
+      console.error('Error fetching documents:', err);
+    }
+  };
+
+  const fetchConfirmed = async () => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/confirmed`);
+      if (res.ok) {
+        const data = await res.json();
+        setConfirmed(data);
+      }
+    } catch (err) {
+      console.error('Error fetching confirmed:', err);
+    }
+  };
 
   // 4. Form States (Menu 1: Manual registration)
   const [waitlistForm, setWaitlistForm] = useState({
@@ -157,42 +202,78 @@ function App() {
     }
   };
 
-  const executeAddWaitlist = (clientData) => {
-    setWaitlist((prev) => [clientData, ...prev]);
-    setWaitlistForm({
-      firstName: '',
-      lastName: '',
-      phone: '',
-      date: todayStr,
-      time: '12:00',
-      reason: visitReasons[0],
-      customReason: ''
-    });
-    triggerToast(`Клиент ${clientData.firstName} ${clientData.lastName} добавлен в список ожидания.`);
+  const executeAddWaitlist = async (clientData) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(clientData)
+      });
+      if (res.ok) {
+        const newRecord = await res.json();
+        setWaitlist((prev) => [newRecord, ...prev]);
+        setWaitlistForm({
+          firstName: '',
+          lastName: '',
+          phone: '',
+          date: todayStr,
+          time: '12:00',
+          reason: visitReasons[0],
+          customReason: ''
+        });
+        triggerToast(`Клиент ${clientData.firstName} ${clientData.lastName} добавлен в список ожидания.`);
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Menu 1: Update Waitlist Registration (Edit Modal)
-  const handleUpdateWaitlist = (e) => {
+  const handleUpdateWaitlist = async (e) => {
     e.preventDefault();
     if (!editWaitlistRecord.firstName || !editWaitlistRecord.lastName || !editWaitlistRecord.phone) {
       alert('Пожалуйста, заполните основные поля.');
       return;
     }
-    setWaitlist((prev) =>
-      prev.map((item) => (item.id === editWaitlistRecord.id ? editWaitlistRecord : item))
-    );
-    setEditWaitlistRecord(null);
-    triggerToast('Данные клиента успешно отредактированы.');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/waitlist/${editWaitlistRecord.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editWaitlistRecord)
+      });
+      if (res.ok) {
+        const updatedRecord = await res.json();
+        setWaitlist((prev) =>
+          prev.map((item) => (item.id === updatedRecord.id ? updatedRecord : item))
+        );
+        setEditWaitlistRecord(null);
+        triggerToast('Данные клиента успешно отредактированы.');
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Menu 1: Delete Waitlist Record
-  const handleDeleteWaitlist = (id) => {
-    setWaitlist((prev) => prev.filter((item) => item.id !== id));
-    triggerToast('Запись удалена.');
+  const handleDeleteWaitlist = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/waitlist/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setWaitlist((prev) => prev.filter((item) => item.id !== id));
+        triggerToast('Запись удалена.');
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Menu 1: Confirm Waitlist Record (moves to Menu 3: Confirmed list)
-  const handleConfirmWaitlist = (record) => {
+  const handleConfirmWaitlist = async (record) => {
     const confirmedEntry = {
       id: `c-${Date.now()}`,
       firstName: record.firstName,
@@ -211,10 +292,26 @@ function App() {
       source: 'waitlist'
     };
 
-    setConfirmed((prev) => [confirmedEntry, ...prev]);
-    // Remove from waitlist
-    setWaitlist((prev) => prev.filter((item) => item.id !== record.id));
-    triggerToast(`Клиент ${record.firstName} ${record.lastName} подтвержден и добавлен в архив.`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/confirmed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(confirmedEntry)
+      });
+      if (res.ok) {
+        const newConfirmed = await res.json();
+        setConfirmed((prev) => [newConfirmed, ...prev]);
+
+        await fetch(`${API_BASE_URL}/api/waitlist/${record.id}`, {
+          method: 'DELETE'
+        });
+        setWaitlist((prev) => prev.filter((item) => item.id !== record.id));
+        triggerToast(`Клиент ${record.firstName} ${record.lastName} подтвержден и добавлен в архив.`);
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Menu 2: File upload simulator (click to upload dummy files)
@@ -316,44 +413,79 @@ function App() {
     }
   };
 
-  const executeAddOcr = (clientData) => {
-    setDocsList((prev) => [clientData, ...prev]);
-    // Reset inputs
-    setUploadedFiles({ passport: null, vin: null, pdf: null, numberScreenshot: null });
-    setOcrData({
-      firstName: '',
-      lastName: '',
-      passportNumber: '',
-      vinCode: '',
-      virtualPhone: '',
-      country: 'Армения',
-      pdfFileName: ''
-    });
-    triggerToast(`Пакет документов для ${clientData.firstName} ${clientData.lastName} сохранен.`);
+  const executeAddOcr = async (clientData) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/documents`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(clientData)
+      });
+      if (res.ok) {
+        const newRecord = await res.json();
+        setDocsList((prev) => [newRecord, ...prev]);
+        setUploadedFiles({ passport: null, vin: null, pdf: null, numberScreenshot: null });
+        setOcrData({
+          firstName: '',
+          lastName: '',
+          passportNumber: '',
+          vinCode: '',
+          virtualPhone: '',
+          country: 'Армения',
+          pdfFileName: ''
+        });
+        triggerToast(`Пакет документов для ${clientData.firstName} ${clientData.lastName} сохранен.`);
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Menu 2: Update Docs (Edit Modal)
-  const handleUpdateDocs = (e) => {
+  const handleUpdateDocs = async (e) => {
     e.preventDefault();
     if (!editDocsRecord.firstName || !editDocsRecord.lastName || !editDocsRecord.vinCode) {
       alert('Пожалуйста, заполните основные поля.');
       return;
     }
-    setDocsList((prev) =>
-      prev.map((item) => (item.id === editDocsRecord.id ? editDocsRecord : item))
-    );
-    setEditDocsRecord(null);
-    triggerToast('Данные документов обновлены.');
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/documents/${editDocsRecord.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editDocsRecord)
+      });
+      if (res.ok) {
+        const updatedRecord = await res.json();
+        setDocsList((prev) =>
+          prev.map((item) => (item.id === updatedRecord.id ? updatedRecord : item))
+        );
+        setEditDocsRecord(null);
+        triggerToast('Данные документов обновлены.');
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Menu 2: Delete Docs Record
-  const handleDeleteDocs = (id) => {
-    setDocsList((prev) => prev.filter((item) => item.id !== id));
-    triggerToast('Пакет документов удален.');
+  const handleDeleteDocs = async (id) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/documents/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setDocsList((prev) => prev.filter((item) => item.id !== id));
+        triggerToast('Пакет документов удален.');
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Menu 2: Confirm Docs Record (moves to Menu 3: Confirmed list)
-  const handleConfirmDocs = (record) => {
+  const handleConfirmDocs = async (record) => {
     const confirmedEntry = {
       id: `c-${Date.now()}`,
       firstName: record.firstName,
@@ -372,10 +504,26 @@ function App() {
       source: 'documents'
     };
 
-    setConfirmed((prev) => [confirmedEntry, ...prev]);
-    // Remove from docs list
-    setDocsList((prev) => prev.filter((item) => item.id !== record.id));
-    triggerToast(`Клиент ${record.firstName} ${record.lastName} успешно подтвержден и перенесен в архив.`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/confirmed`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(confirmedEntry)
+      });
+      if (res.ok) {
+        const newConfirmed = await res.json();
+        setConfirmed((prev) => [newConfirmed, ...prev]);
+
+        await fetch(`${API_BASE_URL}/api/documents/${record.id}`, {
+          method: 'DELETE'
+        });
+        setDocsList((prev) => prev.filter((item) => item.id !== record.id));
+        triggerToast(`Клиент ${record.firstName} ${record.lastName} успешно подтвержден и перенесен в архив.`);
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Menu 2: ZIP Download generator (creates zip with real Excel Sheet and placeholder PDF)
@@ -438,7 +586,7 @@ startxref
   };
 
   // Menu 3: Restore Confirmed client back to Waitlist (Menu 1)
-  const handleRestoreToWaitlist = (record) => {
+  const handleRestoreToWaitlist = async (record) => {
     const waitlistEntry = {
       id: `w-${Date.now()}`,
       firstName: record.firstName,
@@ -451,10 +599,26 @@ startxref
       servicedBy: username || 'Администратор'
     };
 
-    setWaitlist((prev) => [waitlistEntry, ...prev]);
-    // Remove from confirmed archive
-    setConfirmed((prev) => prev.filter((item) => item.id !== record.id));
-    triggerToast(`Клиент ${record.firstName} ${record.lastName} возвращен в ожидание на сегодня!`);
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/waitlist`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(waitlistEntry)
+      });
+      if (res.ok) {
+        const newWaitlist = await res.json();
+        setWaitlist((prev) => [newWaitlist, ...prev]);
+
+        await fetch(`${API_BASE_URL}/api/confirmed/${record.id}`, {
+          method: 'DELETE'
+        });
+        setConfirmed((prev) => prev.filter((item) => item.id !== record.id));
+        triggerToast(`Клиент ${record.firstName} ${record.lastName} возвращен в ожидание на сегодня!`);
+      }
+    } catch (err) {
+      console.error(err);
+      triggerToast('Ошибка соединения с сервером');
+    }
   };
 
   // Duplicate Warning Modal Confirm Actions
