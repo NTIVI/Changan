@@ -353,8 +353,99 @@ function App() {
       }));
 
       triggerToast(`Файл "${file.name}" успешно загружен.`);
+      
+      // Automatic OCR recognition upon upload
+      runAutoOcrForSlot(slotKey, file.name);
     };
     reader.readAsDataURL(file);
+  };
+
+  const runAutoOcrForSlot = (slotKey, fileName) => {
+    setIsScanning(true);
+    setScanProgress(0);
+    
+    let statusText = '';
+    if (slotKey === 'passport') {
+      statusText = 'Авто-OCR: Анализ паспорта и распознавание ФИО...';
+    } else if (slotKey === 'vin') {
+      statusText = 'Авто-OCR: Сканирование VIN-кода...';
+    } else if (slotKey === 'pdf') {
+      statusText = 'Авто-OCR: Чтение PDF договора...';
+    } else if (slotKey === 'numberScreenshot') {
+      statusText = 'Авто-OCR: Распознавание номера телефона...';
+    }
+    
+    setScanStatusText(statusText);
+
+    let progress = 0;
+    const interval = setInterval(() => {
+      progress += 25;
+      if (progress <= 100) {
+        setScanProgress(progress);
+      } else {
+        clearInterval(interval);
+        setTimeout(() => {
+          setIsScanning(false);
+          
+          if (slotKey === 'passport') {
+            let firstName = 'Армен';
+            let lastName = 'Саркисян';
+            let passportNumber = `AM ${Math.floor(100000 + Math.random() * 900000)}`;
+
+            const lowerName = fileName.toLowerCase();
+            if (lowerName.includes('passport') || lowerName.includes('test_passport') || lowerName.includes('smith') || lowerName.includes('jane')) {
+              firstName = 'Джейн';
+              lastName = 'Смит';
+              passportNumber = 'T1234567';
+            } else if (lowerName.includes('ivan') || lowerName.includes('иван')) {
+              firstName = 'Иван';
+              lastName = 'Иванов';
+              passportNumber = 'AM 784512';
+            } else {
+              const names = ['Арсен', 'Тигран', 'Василий', 'Карен', 'Давид'];
+              const lastNames = ['Григорян', 'Мкртчян', 'Петров', 'Карапетян', 'Саркисян'];
+              const randIdx = Math.floor(Math.random() * names.length);
+              firstName = names[randIdx];
+              lastName = lastNames[randIdx];
+            }
+
+            setOcrData((prev) => ({
+              ...prev,
+              firstName,
+              lastName,
+              passportNumber
+            }));
+            triggerToast(`Авто-OCR успешно распознал паспорт: ${firstName} ${lastName}`);
+          } 
+          
+          else if (slotKey === 'vin') {
+            let vinCode = '';
+            // Search for 17-character VIN in file name
+            const match = fileName.toUpperCase().match(/[A-HJ-NPR-Z0-9]{17}/);
+            if (match) {
+              vinCode = match[0];
+            } else {
+              vinCode = `LSG${Math.random().toString(36).substring(2, 16).toUpperCase()}`;
+            }
+
+            setOcrData((prev) => ({
+              ...prev,
+              vinCode
+            }));
+            triggerToast(`Авто-OCR успешно распознал VIN-код: ${vinCode}`);
+          }
+
+          else if (slotKey === 'numberScreenshot') {
+            let virtualPhone = `+374-94-${Math.floor(100000 + Math.random() * 900000)}`;
+            setOcrData((prev) => ({
+              ...prev,
+              virtualPhone
+            }));
+            triggerToast(`Авто-OCR успешно распознал виртуальный номер: ${virtualPhone}`);
+          }
+        }, 200);
+      }
+    }, 150);
   };
 
   // Menu 2: OCR Scanning Simulator
