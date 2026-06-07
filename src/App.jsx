@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   LayoutDashboard,
   UserCheck,
@@ -17,7 +17,8 @@ import {
   AlertTriangle,
   Upload,
   FileText,
-  UserX
+  UserX,
+  Camera
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
@@ -107,6 +108,9 @@ function App() {
     pdf: null,
     numberScreenshot: null
   });
+  const [cameraActiveSlot, setCameraActiveSlot] = useState(null);
+  const [cameraStream, setCameraStream] = useState(null);
+  const videoRef = useRef(null);
   const [isScanning, setIsScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanStatusText, setScanStatusText] = useState('');
@@ -429,6 +433,63 @@ function App() {
       setIsScanning(false);
       triggerToast('Ошибка связи с сервером при распознавании.');
     }
+  };
+
+  const startCamera = async (slotKey) => {
+    setCameraActiveSlot(slotKey);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      setCameraStream(stream);
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+        }
+      }, 300);
+    } catch (err) {
+      console.error('Error accessing camera:', err);
+      alert('Не удалось получить доступ к камере. Убедитесь, что разрешения предоставлены.');
+      setCameraActiveSlot(null);
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraStream) {
+      cameraStream.getTracks().forEach(track => track.stop());
+    }
+    setCameraStream(null);
+    setCameraActiveSlot(null);
+  };
+
+  const capturePhoto = () => {
+    if (!videoRef.current) return;
+    
+    const video = videoRef.current;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth || 640;
+    canvas.height = video.videoHeight || 480;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    
+    const base64Data = canvas.toDataURL('image/png');
+    const mockFileName = `camera_capture_${cameraActiveSlot}_${Date.now()}.png`;
+
+    setUploadedFiles((prev) => ({
+      ...prev,
+      [cameraActiveSlot]: mockFileName
+    }));
+
+    setUploadedFilesData((prev) => ({
+      ...prev,
+      [cameraActiveSlot]: base64Data
+    }));
+
+    triggerToast(`Снимок с камеры успешно сохранен.`);
+    
+    stopCamera();
+    runAutoOcrForSlot(cameraActiveSlot, mockFileName, base64Data);
   };
 
   // Menu 2: OCR Scanning Simulator
@@ -1259,6 +1320,16 @@ startxref
                     {uploadedFiles.passport && (
                       <span className="slot-file-indicator">{uploadedFiles.passport}</span>
                     )}
+                    <button
+                      className="camera-slot-btn"
+                      title="Использовать камеру"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startCamera('passport');
+                      }}
+                    >
+                      <Camera size={16} />
+                    </button>
                   </div>
 
                   <div
@@ -1271,6 +1342,16 @@ startxref
                     {uploadedFiles.vin && (
                       <span className="slot-file-indicator">{uploadedFiles.vin}</span>
                     )}
+                    <button
+                      className="camera-slot-btn"
+                      title="Использовать камеру"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startCamera('vin');
+                      }}
+                    >
+                      <Camera size={16} />
+                    </button>
                   </div>
 
                   <div
@@ -1295,6 +1376,16 @@ startxref
                     {uploadedFiles.numberScreenshot && (
                       <span className="slot-file-indicator">{uploadedFiles.numberScreenshot}</span>
                     )}
+                    <button
+                      className="camera-slot-btn"
+                      title="Использовать камеру"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        startCamera('numberScreenshot');
+                      }}
+                    >
+                      <Camera size={16} />
+                    </button>
                   </div>
                 </div>
 
@@ -1894,6 +1985,79 @@ startxref
                 Отмена
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Camera Scanner */}
+      {cameraActiveSlot && (
+        <div className="modal-overlay" onClick={stopCamera}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: '500px', width: '90%' }}>
+            <button className="modal-close" onClick={stopCamera}><X size={20} /></button>
+            <h3 style={{ margin: '0 0 1rem', color: 'var(--accent-cyan)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <Camera size={20} />
+              Камера: {cameraActiveSlot === 'passport' ? 'Сканирование паспорта' : cameraActiveSlot === 'vin' ? 'Сканирование VIN-кода' : 'Сканирование номера'}
+            </h3>
+            
+            <div style={{ position: 'relative', borderRadius: '8px', overflow: 'hidden', backgroundColor: '#000', aspectRatio: '4/3', marginBottom: '1.25rem' }}>
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                muted
+                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+              />
+              
+              {/* Scan box visual overlay */}
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                border: '2px dashed var(--accent-cyan)',
+                borderRadius: '8px',
+                pointerEvents: 'none',
+                boxShadow: '0 0 0 9999px rgba(0, 0, 0, 0.5)',
+                width: cameraActiveSlot === 'passport' ? '80%' : '85%',
+                height: cameraActiveSlot === 'passport' ? '55%' : '30%'
+              }}>
+                {/* Visual scan animation line */}
+                <div style={{
+                  width: '100%',
+                  height: '2px',
+                  backgroundColor: 'var(--accent-cyan)',
+                  boxShadow: '0 0 8px var(--accent-cyan)',
+                  position: 'absolute',
+                  top: '0',
+                  animation: 'scanner-loop 2s infinite linear'
+                }} />
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <button
+                onClick={capturePhoto}
+                className="action-btn check"
+                style={{ flex: 1, padding: '0.75rem', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}
+              >
+                <Check size={18} /> Сделать снимок
+              </button>
+              <button
+                onClick={stopCamera}
+                className="action-btn delete"
+                style={{ padding: '0.75rem 1.25rem', borderRadius: '8px', display: 'flex', justifyContent: 'center', alignItems: 'center', cursor: 'pointer' }}
+              >
+                Отмена
+              </button>
+            </div>
+            
+            <style>{`
+              @keyframes scanner-loop {
+                0% { top: 0%; }
+                50% { top: 100%; }
+                100% { top: 0%; }
+              }
+            `}</style>
           </div>
         </div>
       )}

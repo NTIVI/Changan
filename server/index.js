@@ -454,8 +454,11 @@ app.post('/api/ocr', async (req, res) => {
     }
     const buffer = Buffer.from(base64Content, 'base64');
     
-    // Process with Tesseract for eng and rus language
-    const { data: { text } } = await Tesseract.recognize(buffer, 'eng+rus');
+    // Speed optimization: VIN only uses Latin characters, so use 'eng' instead of 'eng+rus'
+    const lang = slotKey === 'vin' ? 'eng' : 'eng+rus';
+    
+    // Process with Tesseract for detected language
+    const { data: { text } } = await Tesseract.recognize(buffer, lang);
     console.log(`[OCR] Raw text: ${text}`);
     
     const parsedData = parseOcrText(text, slotKey, fileName || '');
